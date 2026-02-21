@@ -13,12 +13,13 @@ Built with Flutter for Android.
 <p align="center">
   <img src="screenshots/dashboard.png" width="200" alt="Dashboard" />
   <img src="screenshots/customers.png" width="200" alt="Customers" />
-  <img src="screenshots/orders.png" width="200" alt="Orders" />
-  <img src="screenshots/financial.png" width="200" alt="Financial" />
+  <img src="screenshots/cusomer_profile.png" width="200" alt="Customer Profile" />
+  <img src="screenshots/create_order.png" width="200" alt="Create Order" />
 </p>
 
 <p align="center">
-  <img src="screenshots/measurements.png" width="200" alt="Measurements" />
+  <img src="screenshots/measuremnt.png" width="200" alt="Measurements" />
+  <img src="screenshots/financial.png" width="200" alt="Financial Summary" />
   <img src="screenshots/backup.png" width="200" alt="Backup" />
 </p>
 ---
