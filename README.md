@@ -1,6 +1,6 @@
 # TailorPro 🪡
 
-**Professional Tailoring Business Management App**
+**c**
 
 A complete offline-first mobile solution for tailors to efficiently manage customers, measurements, orders, and payments.
 
@@ -13,12 +13,12 @@ Built with Flutter for Android.
 <p align="center">
   <img src="screenshots/dashboard.png" width="200" alt="Dashboard" />
   <img src="screenshots/customers.png" width="200" alt="Customers" />
-  <img src="screenshots/cusomer_profile.png" width="200" alt="Customer Profile" />
+  <img src="screenshots/customer_profile.png" width="200" alt="Customer Profile" />
   <img src="screenshots/create_order.png" width="200" alt="Create Order" />
 </p>
 
 <p align="center">
-  <img src="screenshots/measuremnt.png" width="200" alt="Measurements" />
+  <img src="screenshots/measurement.png" width="200" alt="Measurements" />
   <img src="screenshots/financial.png" width="200" alt="Financial Summary" />
   <img src="screenshots/backup.png" width="200" alt="Backup" />
 </p>
@@ -122,7 +122,7 @@ Built with Flutter for Android.
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/tailorpro.git
+git clone https://github.com/peterduro2000-star/tailorpro.git
 cd tailorpro
 ```
 
@@ -298,7 +298,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Developer
 
-**[Your Name]**
+**[Peter Duro]**
 - GitHub: [@peterduro2000](https://github.com/peterduro2000)
 - Email: pwterduro2000@gmail.com
 - LinkedIn: [Your Profile](https://linkedin.com/in/yourprofile)
@@ -366,8 +366,8 @@ Found this helpful? Please:
 
 ## 📊 Stats
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/tailorpro?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/tailorpro?style=social)
+![GitHub stars](https://img.shields.io/github/stars/peterduro2000/tailorpro?style=social)
+![GitHub forks](https://img.shields.io/github/forks/peterduro2000/tailorpro?style=social)
 ![Platform](https://img.shields.io/badge/Platform-Android-green)
 ![Flutter](https://img.shields.io/badge/Flutter-3.4+-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
