@@ -9,6 +9,7 @@ import '../../widgets/custom_icon_widget.dart';
 import './widgets/attention_card_widget.dart';
 import './widgets/week_overview_widget.dart';
 import './widgets/quick_stats_widget.dart';
+import './widgets/todays_work_widget.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -82,7 +83,11 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  // Calculate metrics
+  // ============================================
+  // METRICS CALCULATION
+  // ============================================
+
+  // Order metrics
   List<Order> get _overdueOrders =>
       _allOrders.where((o) => o.isOverdue).toList();
 
@@ -92,6 +97,13 @@ class _DashboardState extends State<Dashboard> {
   List<Order> get _dueThisWeekOrders =>
       _allOrders.where((o) => o.isDueThisWeek).toList();
 
+  int get _activeOrders =>
+      _allOrders.where((o) => o.status != Order.statusCollected).length;
+
+  int get _unpaidOrders =>
+      _allOrders.where((o) => o.isUnpaid).length;
+
+  // Financial metrics
   double get _totalRevenue =>
       _allOrders.fold(0, (sum, order) => sum + order.totalAmount);
 
@@ -100,11 +112,21 @@ class _DashboardState extends State<Dashboard> {
 
   double get _totalBalance => _totalRevenue - _totalPaid;
 
-  int get _unpaidOrders =>
-      _allOrders.where((o) => o.isUnpaid).length;
+  // Customer metrics
+  int get _customersWithBalance =>
+      _allOrders
+          .where((o) => o.balance > 0)
+          .map((o) => o.customerId)
+          .toSet()
+          .length;
 
-  int get _activeOrders =>
-      _allOrders.where((o) => o.status != Order.statusCollected).length;
+  // ✨ NEW METRIC: Customers with active orders (not yet collected)
+  int get _customersWithActiveOrders =>
+      _allOrders
+          .where((o) => o.status != Order.statusCollected)
+          .map((o) => o.customerId)
+          .toSet()
+          .length;
 
   @override
   Widget build(BuildContext context) {
@@ -125,46 +147,42 @@ class _DashboardState extends State<Dashboard> {
           ],
         ),
         actions: [
-  IconButton(
-    icon: CustomIconWidget(
-      iconName: 'notifications',
-      size: 24,
-      color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
-    ),
-    onPressed: () {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notifications coming soon!'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    },
-  ),
-
-  // ✅ SETTINGS BUTTON
-  IconButton(
-    icon: Icon(
-      Icons.settings,
-      size: 24,
-      color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
-    ),
-    onPressed: () {
-      Navigator.of(context).pushNamed('/settings');
-    },
-  ),
-
-  IconButton(
-    icon: CustomIconWidget(
-      iconName: 'person',
-      size: 24,
-      color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
-    ),
-    onPressed: () {
-      Navigator.of(context).pushNamed('/customer-list');
-    },
-  ),
-],
-
+          IconButton(
+            icon: CustomIconWidget(
+              iconName: 'notifications',
+              size: 24,
+              color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
+            ),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Notifications coming soon!'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.settings,
+              size: 24,
+              color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
+            ),
+            onPressed: () {
+              Navigator.of(context).pushNamed('/settings');
+            },
+          ),
+          IconButton(
+            icon: CustomIconWidget(
+              iconName: 'person',
+              size: 24,
+              color: theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
+            ),
+            onPressed: () {
+              Navigator.of(context).pushNamed('/customer-list');
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? _buildLoadingSkeleton()
@@ -172,7 +190,7 @@ class _DashboardState extends State<Dashboard> {
               onRefresh: () => _loadDashboardData(forceRefresh: true),
               color: theme.colorScheme.primary,
               backgroundColor: theme.colorScheme.surface,
-              child: _allOrders.isEmpty && !_isLoading
+              child: _totalCustomers == 0 && !_isLoading
                   ? _buildEmptyState()
                   : SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -186,12 +204,29 @@ class _DashboardState extends State<Dashboard> {
                           // Last updated timestamp
                           _buildLastUpdatedTime(),
 
-                          // Quick Stats
+                          // Quick Stats - NOW WITH ACTIVE CLIENTS METRIC ✨
                           QuickStatsWidget(
                             totalCustomers: _totalCustomers,
+                            customersWithActiveOrders: _customersWithActiveOrders,
                             activeOrders: _activeOrders,
                             overdueOrders: _overdueOrders.length,
                             unpaidOrders: _unpaidOrders,
+                          ),
+
+                          SizedBox(height: 3.h),
+
+                          // ✨ TODAY'S WORK - Powerful productivity feature
+                          TodaysWorkWidget(
+                            overdueOrders: _overdueOrders,
+                            dueTodayOrders: _dueTodayOrders,
+                            onTapOrder: (order) {
+                              // Navigate to customer profile with the order's customer ID
+                              // This allows viewing/editing the order details
+                              Navigator.of(context).pushNamed(
+                                '/customer-profile',
+                                arguments: order.customerId,
+                              );
+                            },
                           ),
 
                           SizedBox(height: 3.h),
@@ -242,7 +277,10 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // FIX 1: Improved Last Updated Time Format
+  // ============================================
+  // UI BUILDER METHODS
+  // ============================================
+
   Widget _buildLastUpdatedTime() {
     if (_lastLoadTime == null) return const SizedBox.shrink();
     
@@ -283,7 +321,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // FIX 4: Pull to refresh hint
   Widget _buildRefreshHint() {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 1.h),
@@ -301,7 +338,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // FIX 3: Loading Skeleton
   Widget _buildLoadingSkeleton() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(4.w),
@@ -341,6 +377,16 @@ class _DashboardState extends State<Dashboard> {
               ),
             )),
           ),
+          SizedBox(height: 2.h),
+          // Stats skeleton - third row (unpaid full width)
+          Container(
+            height: 100,
+            margin: EdgeInsets.all(2.w),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
           SizedBox(height: 3.h),
           // Attention card skeleton
           Container(
@@ -368,7 +414,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // FIX 2: Enhanced Empty State
   Widget _buildEmptyState() {
     final theme = Theme.of(context);
     
@@ -466,13 +511,6 @@ class _DashboardState extends State<Dashboard> {
   Widget _buildFinancialOverviewCard(BuildContext context) {
     final theme = Theme.of(context);
     
-    // Count customers with balances
-    final customersWithBalance = _allOrders
-        .where((o) => o.balance > 0)
-        .map((o) => o.customerId)
-        .toSet()
-        .length;
-    
     // Count overdue with balance
     final overdueWithBalance = _allOrders
         .where((o) => o.isOverdue && o.balance > 0)
@@ -522,12 +560,12 @@ class _DashboardState extends State<Dashboard> {
             
             SizedBox(height: 2.h),
             
-            if (customersWithBalance > 0 || overdueWithBalance > 0) ...[
-              if (customersWithBalance > 0)
+            if (_customersWithBalance > 0 || overdueWithBalance > 0) ...[
+              if (_customersWithBalance > 0)
                 _buildFinancialStatRow(
                   context,
                   Icons.people,
-                  '$customersWithBalance customer${customersWithBalance > 1 ? 's' : ''} owe money',
+                  '$_customersWithBalance customer${_customersWithBalance > 1 ? 's' : ''} owe money',
                   Colors.orange,
                 ),
               SizedBox(height: 1.h),

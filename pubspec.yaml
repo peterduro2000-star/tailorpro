@@ -21,6 +21,11 @@ dependencies:
   path_provider: ^2.1.2
   share_plus: ^10.1.2      # ADD THIS - for sharing backups
   file_picker: ^8.1.6      # ADD THIS - for selecting backup files
+  provider: ^6.1.2          # ← Add this line
+  supabase_flutter: ^2.8.0
+  app_links: ^3.0.0
+  crypto: ^3.0.0  # For license key checksum generation
+  uuid: ^4.0.0    # For unique license IDs
 
 dev_dependencies:
   flutter_test:

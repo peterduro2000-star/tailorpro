@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -13,7 +14,7 @@ class DatabaseHelper {
     return _database!;
   }
 
-  static const int _version = 3; // CHANGED from 2
+  static const int _version = 4;   // ← Changed to version 4 for cloud sync support
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
@@ -29,24 +30,19 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Add new columns to orders table
+      // Previous upgrades for orders table
       await db.execute('ALTER TABLE orders ADD COLUMN order_title TEXT');
       await db.execute('ALTER TABLE orders ADD COLUMN stage TEXT');
       await db.execute('ALTER TABLE orders ADD COLUMN actual_delivery_date TEXT');
       await db.execute('ALTER TABLE orders ADD COLUMN fabric_details TEXT');
-      
-      // Add delivery_date column
       await db.execute('ALTER TABLE orders ADD COLUMN delivery_date TEXT');
-      
-      // Copy old due_date to delivery_date
       await db.execute('UPDATE orders SET delivery_date = due_date WHERE delivery_date IS NULL');
     }
-    
-    // ADD THIS NEW BLOCK
+
     if (oldVersion < 3) {
-      // Add payments table
+      // Create payments table (if not exists)
       await db.execute('''
-        CREATE TABLE payments (
+        CREATE TABLE IF NOT EXISTS payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           order_id INTEGER NOT NULL,
           customer_id INTEGER NOT NULL,
@@ -60,17 +56,37 @@ class DatabaseHelper {
           FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
         )
       ''');
-      
-      // Create indexes for payments
       await db.execute('CREATE INDEX idx_payment_order ON payments(order_id)');
       await db.execute('CREATE INDEX idx_payment_customer ON payments(customer_id)');
+    }
+
+    if (oldVersion < 4) {
+      // NEW: Add columns needed for cloud sync (user_id, sync_status, etc.)
+      await _addUserIdAndSyncColumns(db);
+    }
+  }
+
+  // Add user_id and sync columns to all tables
+  Future<void> _addUserIdAndSyncColumns(Database db) async {
+    final tables = ['customers', 'measurements', 'orders', 'payments'];
+
+    for (final table in tables) {
+      try {
+        await db.execute('ALTER TABLE $table ADD COLUMN user_id TEXT');
+        await db.execute('ALTER TABLE $table ADD COLUMN sync_status TEXT DEFAULT "local_only"');
+        await db.execute('ALTER TABLE $table ADD COLUMN local_temp_id TEXT');
+        await db.execute('ALTER TABLE $table ADD COLUMN updated_at TEXT');
+        debugPrint('✅ Added sync columns to table: $table');
+      } catch (e) {
+        debugPrint('Column may already exist in $table: $e');
+      }
     }
   }
 
   Future<void> _createDB(Database db, int version) async {
     // Customers table
     await db.execute('''
-      CREATE TABLE customers (
+      CREATE TABLE IF NOT EXISTS customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         phone TEXT NOT NULL UNIQUE,
@@ -84,7 +100,7 @@ class DatabaseHelper {
 
     // Orders table
     await db.execute('''
-      CREATE TABLE orders (
+      CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL,
         order_number TEXT NOT NULL UNIQUE,
@@ -109,7 +125,7 @@ class DatabaseHelper {
 
     // Measurements table
     await db.execute('''
-      CREATE TABLE measurements (
+      CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL,
         measurement_type TEXT NOT NULL,
@@ -120,9 +136,9 @@ class DatabaseHelper {
       )
     ''');
 
-    // ADD PAYMENTS TABLE
+    // Payments table
     await db.execute('''
-      CREATE TABLE payments (
+      CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id INTEGER NOT NULL,
         customer_id INTEGER NOT NULL,
@@ -138,13 +154,13 @@ class DatabaseHelper {
     ''');
 
     // Create indexes
-    await db.execute('CREATE INDEX idx_customer_phone ON customers(phone)');
-    await db.execute('CREATE INDEX idx_customer_name ON customers(name)');
-    await db.execute('CREATE INDEX idx_order_customer ON orders(customer_id)');
-    await db.execute('CREATE INDEX idx_order_status ON orders(status)');
-    await db.execute('CREATE INDEX idx_measurement_customer ON measurements(customer_id)');
-    await db.execute('CREATE INDEX idx_payment_order ON payments(order_id)');
-    await db.execute('CREATE INDEX idx_payment_customer ON payments(customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_phone ON customers(phone)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_name ON customers(name)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_order_customer ON orders(customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_order_status ON orders(status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_measurement_customer ON measurements(customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_payment_order ON payments(order_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_payment_customer ON payments(customer_id)');
   }
 
   Future<void> close() async {

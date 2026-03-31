@@ -3,6 +3,7 @@ import 'package:sizer/sizer.dart';
 
 class QuickStatsWidget extends StatelessWidget {
   final int totalCustomers;
+  final int customersWithActiveOrders; // ✨ NEW PARAMETER
   final int activeOrders;
   final int overdueOrders;
   final int unpaidOrders;
@@ -10,6 +11,7 @@ class QuickStatsWidget extends StatelessWidget {
   const QuickStatsWidget({
     super.key,
     required this.totalCustomers,
+    required this.customersWithActiveOrders, // ✨ NEW
     required this.activeOrders,
     required this.overdueOrders,
     required this.unpaidOrders,
@@ -29,6 +31,8 @@ class QuickStatsWidget extends StatelessWidget {
           ),
         ),
         SizedBox(height: 2.h),
+        
+        // Row 1: Customers + Active Clients (NEW)
         Row(
           children: [
             Expanded(
@@ -44,17 +48,29 @@ class QuickStatsWidget extends StatelessWidget {
             Expanded(
               child: _buildStatCard(
                 context,
+                'Active Clients',
+                customersWithActiveOrders.toString(),
+                Icons.work,
+                const Color(0xFF4CAF50), // Green for active work
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 2.h),
+        
+        // Row 2: Active Orders + Overdue
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                context,
                 'Active Orders',
                 activeOrders.toString(),
                 Icons.shopping_bag,
                 const Color(0xFF2196F3),
               ),
             ),
-          ],
-        ),
-        SizedBox(height: 2.h),
-        Row(
-          children: [
+            SizedBox(width: 3.w),
             Expanded(
               child: _buildStatCard(
                 context,
@@ -64,17 +80,17 @@ class QuickStatsWidget extends StatelessWidget {
                 theme.colorScheme.error,
               ),
             ),
-            SizedBox(width: 3.w),
-            Expanded(
-              child: _buildStatCard(
-                context,
-                'Unpaid',
-                unpaidOrders.toString(),
-                Icons.payment,
-                const Color(0xFFFF9800),
-              ),
-            ),
           ],
+        ),
+        SizedBox(height: 2.h),
+        
+        // Row 3: Unpaid (full width)
+        _buildStatCard(
+          context,
+          'Unpaid Orders',
+          unpaidOrders.toString(),
+          Icons.payment,
+          const Color(0xFFFF9800),
         ),
       ],
     );

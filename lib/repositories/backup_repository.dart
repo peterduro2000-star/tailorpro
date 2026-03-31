@@ -8,29 +8,25 @@ import '../services/database_helper.dart';
 class BackupRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
-  /// Export database to file
+  /// Export database to Downloads/TailorPro folder
   Future<File?> exportDatabase() async {
     try {
-      // Get current database file
       final dbPath = await _dbHelper.database.then((db) => db.path);
       final dbFile = File(dbPath);
 
-      // Create backup directory
-      final directory = await getExternalStorageDirectory();
-      if (directory == null) throw Exception('Storage not available');
-
-      final backupDir = Directory('${directory.path}/TailorPro/Backups');
+      // Save directly to Downloads folder — visible in file manager
+      final backupDir = Directory('/storage/emulated/0/Download/TailorPro');
       if (!await backupDir.exists()) {
         await backupDir.create(recursive: true);
       }
 
-      // Create backup file with timestamp
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')[0];
       final backupPath = '${backupDir.path}/tailorpro_backup_$timestamp.db';
-      
-      // Copy database to backup location
       final backupFile = await dbFile.copy(backupPath);
-      
+
       return backupFile;
     } catch (e) {
       print('Error exporting database: $e');
@@ -42,23 +38,23 @@ class BackupRepository {
   Future<bool> importDatabase(String filePath) async {
     try {
       final backupFile = File(filePath);
-      
+
       if (!await backupFile.exists()) {
         throw Exception('Backup file not found');
       }
 
       // Get current database path
       final dbPath = await _dbHelper.database.then((db) => db.path);
-      
+
       // Close current database
       await _dbHelper.close();
-      
+
       // Replace with backup
       await backupFile.copy(dbPath);
-      
+
       // Reinitialize database
       await _dbHelper.database;
-      
+
       return true;
     } catch (e) {
       print('Error importing database: $e');
@@ -80,23 +76,21 @@ class BackupRepository {
     }
   }
 
-  /// Get list of all backups
+  /// Get list of all backups from Downloads/TailorPro folder
   Future<List<File>> getBackupFiles() async {
     try {
-      final directory = await getExternalStorageDirectory();
-      if (directory == null) return [];
-
-      final backupDir = Directory('${directory.path}/TailorPro/Backups');
+      final backupDir = Directory('/storage/emulated/0/Download/TailorPro');
       if (!await backupDir.exists()) return [];
 
-      final files = backupDir.listSync()
+      final files = backupDir
+          .listSync()
           .whereType<File>()
           .where((f) => f.path.endsWith('.db'))
           .toList();
-      
+
       // Sort by date (newest first)
       files.sort((a, b) => b.path.compareTo(a.path));
-      
+
       return files;
     } catch (e) {
       print('Error getting backups: $e');
@@ -108,7 +102,7 @@ class BackupRepository {
   Future<void> cleanOldBackups({int keepCount = 5}) async {
     try {
       final backups = await getBackupFiles();
-      
+
       if (backups.length > keepCount) {
         for (var i = keepCount; i < backups.length; i++) {
           await backups[i].delete();
