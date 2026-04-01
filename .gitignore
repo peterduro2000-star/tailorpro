@@ -39,3 +39,4 @@ lib/firebase_options.dart
 
 # Local properties for Android (contains Flutter SDK path)
 android/local.properties
+"android/app/google-services.json" 
