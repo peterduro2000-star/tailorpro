@@ -5,6 +5,7 @@ import '../services/supabase_auth_service.dart';
 import '../services/license_service.dart';
 import '../services/license_persistence_service.dart';
 import '../services/license_verification_service.dart';
+import '../services/license_manager.dart';
 import '../services/database_helper.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/data_sync_service.dart';
@@ -27,6 +28,7 @@ class AuthProvider extends ChangeNotifier {
   LicenseService? _licenseService;
   LicensePersistenceService? _persistenceService;
   LicenseVerificationService? _verificationService;
+  LicenseManager? _licenseManager;
   CloudSyncService? _cloudSyncService;
   DataSyncService? _dataSyncService;
 
@@ -72,32 +74,24 @@ class AuthProvider extends ChangeNotifier {
   License? get license => _license;
   bool get licenseVerified => _licenseVerified;
   bool get licenseInitialized => _licenseInitialized;
-  LicenseTier? get licenseTier => _iapLicenseTier ?? _license?.tier;
-  LicenseTier? get effectiveLicenseTier => _iapLicenseTier ?? _license?.effectiveTier;
+  LicenseTier? get licenseTier => _license?.tier;
+  LicenseTier? get effectiveLicenseTier => _license?.effectiveTier;
   String? get licenseStatus => _licenseStatus;
-  int get remainingClients => activeRemainingClients;
-  int get maxClients => activeMaxClients;
+  int get remainingClients => _license?.canAddMoreClients ?? false ? (_license!.tier.maxClients - (_license!.clientsUsed ?? 0)) : 0;
+  int get maxClients => _license?.tier.maxClients ?? LicenseTier.free.maxClients;
   int get clientsUsed => _license?.clientsUsed ?? 0;
   bool get isInGracePeriod => _isInGracePeriod;
-  bool get hasInAppPurchaseEntitlement => _iapLicenseTier != null;
-  LicenseTier? get purchasedLicenseTier => _iapLicenseTier;
-  int get activeMaxClients {
-    if (_iapLicenseTier != null) {
-      return _iapLicenseTier!.maxClients;
-    }
-    return _license?.effectiveClientLimit ?? LicenseTier.free.maxClients;
-  }
-
-  int get activeRemainingClients {
-    final used = _license?.clientsUsed ?? 0;
-    final remaining = activeMaxClients - used;
-    return remaining < 0 ? 0 : remaining;
-  }
-
-  bool get hasPremiumAccess => activeTier != LicenseTier.free;
-
-  LicenseTier get activeTier => _iapLicenseTier ?? _license?.effectiveTier ?? LicenseTier.free;
   int get daysInGracePeriod => _daysInGracePeriod;
+  
+  // ─── Helper getters that delegate to LicenseManager (for backward compatibility) ─
+  /// Current effective tier (may be free due to expiry).
+  LicenseTier get effectiveTier => _license?.effectiveTier ?? LicenseTier.free;
+  
+  /// Maximum clients for current effective tier.
+  int get activeMaxClients => effectiveTier.maxClients;
+  
+  /// True if user has premium access (not free tier).
+  bool get hasPremiumAccess => effectiveTier != LicenseTier.free;
   String get licenseExpiryFormatted => _license?.expiryDateFormatted ?? 'N/A';
   int get migratedRecordsCount => _migratedRecordsCount;
 
@@ -112,6 +106,9 @@ class AuthProvider extends ChangeNotifier {
 
   // Nullable variant for optional/conditional access.
   CloudSyncService? get cloudSyncOrNull => _cloudSyncService;
+
+  // LicenseManager getter — provides unified entitlement decisions.
+  LicenseManager? get licenseManager => _licenseManager;
 
   // ─── Initialisation ───────────────────────────────────────────────────────────
 
@@ -187,6 +184,9 @@ class AuthProvider extends ChangeNotifier {
       licenseService: licenseService,
       persistenceService: persistenceService,
     );
+    final licenseManager = LicenseManager(
+      verificationService: verificationService,
+    );
     final cloudSyncService = CloudSyncService(
       client: authService.client,
       dbHelper: DatabaseHelper.instance,
@@ -199,6 +199,7 @@ class AuthProvider extends ChangeNotifier {
     _licenseService = licenseService;
     _persistenceService = persistenceService;
     _verificationService = verificationService;
+    _licenseManager = licenseManager;
     _cloudSyncService = cloudSyncService;
     _dataSyncService = dataSyncService;
 
@@ -216,17 +217,8 @@ class AuthProvider extends ChangeNotifier {
     if (cached != null) {
       _license = cached;
     }
-    _loadCachedIapLicense();
     _updateLicenseState();
     notifyListeners();
-  }
-
-  void _loadCachedIapLicense() {
-    if (_persistenceService == null) return;
-    final cachedTier = _persistenceService!.loadIapTier();
-    if (cachedTier != null && cachedTier != LicenseTier.free) {
-      _iapLicenseTier = cachedTier;
-    }
   }
 
   /// Async slow-path: verify with server and persist the result.
@@ -266,14 +258,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _updateLicenseState() {
-    if (_iapLicenseTier != null && (_license == null || _license!.effectiveTier == LicenseTier.free)) {
-      _licenseVerified = true;
-      _isInGracePeriod = false;
-      _daysInGracePeriod = 0;
-      _licenseStatus = '${_iapLicenseTier!.displayName} (Google Play purchase)';
-      return;
-    }
-
     final lic = _license;
     if (lic == null) {
       _licenseVerified = false;
@@ -507,15 +491,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> applyIapPurchase(LicenseTier tier) async {
-    if (_persistenceService == null) return;
-
-    _iapLicenseTier = tier;
-    await _persistenceService!.saveIapTier(tier);
-    _updateLicenseState();
-    notifyListeners();
-  }
-
   // ─── Sign out ─────────────────────────────────────────────────────────────────
 
   Future<void> signOut() async {
@@ -564,7 +539,6 @@ class AuthProvider extends ChangeNotifier {
     _email = null;
     _otpSent = false;
     _license = null;
-    _iapLicenseTier = null;
     _licenseVerified = false;
     _licenseInitialized = false;
     _initializingLicense = false;

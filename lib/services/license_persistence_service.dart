@@ -76,29 +76,6 @@ class LicensePersistenceService {
     await prefs.setInt(_offlineCounterKey, current + 1);
   }
 
-  // ─── In-app purchase entitlement cache ─────────────────────────────────────
-
-  static const String _iapTierSuffix = '_iap_tier';
-
-  String get _iapTierKey => '${userId}$_iapTierSuffix';
-
-  Future<void> saveIapTier(LicenseTier tier) async {
-    await prefs.setString(_iapTierKey, tier.toString().split('.').last);
-  }
-
-  LicenseTier? loadIapTier() {
-    final raw = prefs.getString(_iapTierKey);
-    if (raw == null) return null;
-    return LicenseTier.values.firstWhere(
-      (item) => item.toString().split('.').last == raw,
-      orElse: () => LicenseTier.free,
-    );
-  }
-
-  Future<void> clearIapTier() async {
-    await prefs.remove(_iapTierKey);
-  }
-
   /// Reset offline counter to 0 after a successful server verification.
   Future<void> resetOfflineDayCount() async {
     await prefs.setInt(_offlineCounterKey, 0);
@@ -125,7 +102,6 @@ class LicensePersistenceService {
       prefs.remove(_verificationKey),
       prefs.remove(_gracePeriodWarningKey),
       prefs.remove(_offlineCounterKey),
-      prefs.remove(_iapTierKey),
     ]);
   }
 }
