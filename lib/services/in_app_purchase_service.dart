@@ -3,9 +3,7 @@ import '../models/license_model.dart';
 
 class InAppPurchaseService {
   static const Set<String> productIds = <String>{
-    'tailorpro_basic',
-    'tailorpro_professional',
-    'tailorpro_monthly',
+    'tailorpro_pro',
   };
 
   final InAppPurchase _iap = InAppPurchase.instance;
@@ -54,12 +52,8 @@ class InAppPurchaseService {
 
   LicenseTier? tierForProductId(String productId) {
     switch (productId) {
-      case 'tailorpro_basic':
-        return LicenseTier.basic;
-      case 'tailorpro_professional':
-        return LicenseTier.professional;
-      case 'tailorpro_monthly':
-        return LicenseTier.monthly;
+      case 'tailorpro_pro':
+        return LicenseTier.pro;
       default:
         return null;
     }

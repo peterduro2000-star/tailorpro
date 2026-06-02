@@ -1,8 +1,6 @@
 enum LicenseTier {
   free,
-  basic,
-  professional,
-  monthly,
+  pro,
 }
 
 extension LicenseTierExtension on LicenseTier {
@@ -10,12 +8,8 @@ extension LicenseTierExtension on LicenseTier {
     switch (this) {
       case LicenseTier.free:
         return 'Free';
-      case LicenseTier.basic:
-        return 'Basic';
-      case LicenseTier.professional:
-        return 'Professional';
-      case LicenseTier.monthly:
-        return 'Monthly';
+      case LicenseTier.pro:
+        return 'Pro';
     }
   }
 
@@ -23,12 +17,8 @@ extension LicenseTierExtension on LicenseTier {
     switch (this) {
       case LicenseTier.free:
         return 5;
-      case LicenseTier.basic:
-        return 50;
-      case LicenseTier.professional:
+      case LicenseTier.pro:
         return 500;
-      case LicenseTier.monthly:
-        return 50; // Same as basic, but expires monthly
     }
   }
 
@@ -36,12 +26,8 @@ extension LicenseTierExtension on LicenseTier {
     switch (this) {
       case LicenseTier.free:
         return 0.0;
-      case LicenseTier.basic:
-        return 3000.0; // ₦3000
-      case LicenseTier.professional:
+      case LicenseTier.pro:
         return 6000.0; // ₦6000
-      case LicenseTier.monthly:
-        return 500.0; // ₦500/month
     }
   }
 
@@ -51,7 +37,7 @@ extension LicenseTierExtension on LicenseTier {
   }
 
   bool get isExpirable {
-    return this == LicenseTier.monthly;
+    return false;
   }
 
   List<String> get features {
@@ -63,14 +49,7 @@ extension LicenseTierExtension on LicenseTier {
           'Local backup only',
           'No cloud sync',
         ];
-      case LicenseTier.basic:
-        return [
-          'Up to 50 clients',
-          'Full measurements',
-          'Cloud backup',
-          'Email support',
-        ];
-      case LicenseTier.professional:
+      case LicenseTier.pro:
         return [
           'Up to 500 clients',
           'Advanced reports',
@@ -78,26 +57,19 @@ extension LicenseTierExtension on LicenseTier {
           'Priority support',
           'Custom fields',
         ];
-      case LicenseTier.monthly:
-        return [
-          'Up to 50 clients (monthly)',
-          'Full measurements',
-          'Cloud backup',
-          'Expires in 30 days',
-        ];
     }
   }
 }
 
 class License {
-  static const int gracePeriodDays = 7;
+  static const int gracePeriodDays = 14;
 
   final String id;
   final String userId;
   final String? licenseKey;
   final LicenseTier tier;
   final DateTime activatedAt;
-  final DateTime? expiresAt; // Only for monthly tier
+  final DateTime? expiresAt;
   final int clientLimit;
   final int clientsUsed;
   final bool isActiveOnServer;

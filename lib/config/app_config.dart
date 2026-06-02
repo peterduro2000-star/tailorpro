@@ -9,6 +9,11 @@ class AppConfig {
   static const String supabaseUrl =
       String.fromEnvironment('SUPABASE_URL', defaultValue: defaultSupabaseUrl);
 
+  static const String edgeFunctionsUrl = String.fromEnvironment(
+    'EDGE_FUNCTIONS_URL',
+    defaultValue: '$defaultSupabaseUrl/functions/v1',
+  );
+
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
     defaultValue: defaultSupabaseAnonKey,

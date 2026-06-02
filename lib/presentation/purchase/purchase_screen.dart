@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/app_config.dart';
 import '../../models/license_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/in_app_purchase_service.dart';
@@ -83,7 +84,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     try {
       final authProvider = context.read<AuthProvider>();
-      await authProvider.applyIapPurchase(tier);
+      final purchaseToken =
+          purchaseDetails.verificationData.serverVerificationData;
+      if (purchaseToken.isEmpty) {
+        throw Exception('Purchase token is missing');
+      }
+
+      await authProvider.activateIapPurchase(
+        edgeFunctionUrl: AppConfig.edgeFunctionsUrl,
+        purchaseToken: purchaseToken,
+        productId: purchaseDetails.productID,
+      );
       await _iapService.completePurchase(purchaseDetails);
 
       if (!mounted) return;
@@ -127,10 +138,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   Widget _buildBody(BuildContext context) {
     if (!_iapService.available) {
-      return Center(
+      return const Center(
         child: Text(
           'In-app purchases are not available on this device.\nTry again on a Google Play-enabled device.',
-          style: const TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: 16),
           textAlign: TextAlign.center,
         ),
       );

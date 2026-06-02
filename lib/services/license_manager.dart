@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/license_model.dart';
 import 'license_verification_service.dart';
 
@@ -109,6 +114,45 @@ class LicenseManager {
     } else {
       return '${license.tier.displayName} — expires ${license.expiryDateFormatted}';
     }
+  }
+
+  /// Activate a Play Store purchase by verifying it on the server and
+  /// refreshing the authoritative license state.
+  Future<License> activateIapPurchase({
+    required String edgeFunctionUrl,
+    required String purchaseToken,
+    required String productId,
+  }) async {
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session == null) {
+      throw Exception('Not authenticated');
+    }
+
+    final uri = Uri.parse('$edgeFunctionUrl/verify-google-play');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${session.accessToken}',
+      },
+      body: jsonEncode({
+        'purchaseToken': purchaseToken,
+        'productId': productId,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Activation failed: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final verifiedLicense = await verificationService.verifyAndGetLicense();
+    if (verifiedLicense == null) {
+      throw Exception('Failed to refresh license after purchase activation.');
+    }
+
+    return verifiedLicense;
   }
 
   /// True if should show grace period warning banner.

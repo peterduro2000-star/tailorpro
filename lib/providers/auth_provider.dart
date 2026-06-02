@@ -77,7 +77,8 @@ class AuthProvider extends ChangeNotifier {
   LicenseTier? get licenseTier => _license?.tier;
   LicenseTier? get effectiveLicenseTier => _license?.effectiveTier;
   String? get licenseStatus => _licenseStatus;
-  int get remainingClients => _license?.canAddMoreClients ?? false ? (_license!.tier.maxClients - (_license!.clientsUsed ?? 0)) : 0;
+  int get remainingClients =>
+      _license?.canAddMoreClients ?? false ? _license!.remainingClients : 0;
   int get maxClients => _license?.tier.maxClients ?? LicenseTier.free.maxClients;
   int get clientsUsed => _license?.clientsUsed ?? 0;
   bool get isInGracePeriod => _isInGracePeriod;
@@ -237,10 +238,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       License? license = await _licenseService!.getCurrentLicense();
 
-      if (license == null) {
-        // First-time user — create a free tier record on the server.
-        license = await _licenseService!.ensureFreeLicense();
-      }
+      // First-time user — create a free tier record on the server.
+      license ??= await _licenseService!.ensureFreeLicense();
 
       if (license != null) {
         _license = license;
@@ -412,22 +411,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> activateIapPurchase({
+    required String edgeFunctionUrl,
+    required String purchaseToken,
+    required String productId,
+  }) async {
+    if (_currentUser == null ||
+        _licenseManager == null ||
+        _persistenceService == null) {
+      throw Exception('Not authenticated');
+    }
+
+    final license = await _licenseManager!.activateIapPurchase(
+      edgeFunctionUrl: edgeFunctionUrl,
+      purchaseToken: purchaseToken,
+      productId: productId,
+    );
+
+    _license = license;
+    _licenseInitialized = true;
+    await _persistenceService!.saveLicense(license);
+    await _persistenceService!.saveVerificationDate(DateTime.now());
+    _updateLicenseState();
+    notifyListeners();
+  }
+
   // ─── Client count management ──────────────────────────────────────────────────
 
   /// Server-authoritative check — never rely on the local cache for this.
   Future<bool> canAddMoreClients() async {
-    if (_iapLicenseTier != null) {
-      final used = _license?.clientsUsed ?? 0;
-      return used < _iapLicenseTier!.maxClients;
+    if (_licenseService != null) {
+      try {
+        return await _licenseService!.canAddMoreClients();
+      } catch (_) {
+        // If offline, fall back to cached value conservatively.
+        return _license?.canAddMoreClients ?? false;
+      }
     }
 
-    if (_licenseService == null) return false;
-    try {
-      return await _licenseService!.canAddMoreClients();
-    } catch (_) {
-      // If offline, fall back to cached value conservatively.
-      return _license?.canAddMoreClients ?? false;
-    }
+    return _license?.canAddMoreClients ?? false;
   }
 
   Future<void> recordClientAddition() async {

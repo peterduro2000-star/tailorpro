@@ -5,6 +5,7 @@ import 'package:sizer/sizer.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../presentation/purchase/purchase_screen.dart';
+import '../../models/license_model.dart';
 import '../../repositories/backup_repository.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -242,7 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ? 'Manage license'
                           : 'Upgrade to Premium',
                       subtitle: authProvider.hasPremiumAccess
-                          ? 'Your active plan: ${authProvider.activeTier.displayName}'
+                          ? 'Your active plan: ${authProvider.effectiveTier.displayName}'
                           : 'Unlock more customers and premium features',
                       onTap: () {
                         Navigator.of(context).push(

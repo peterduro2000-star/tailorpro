@@ -31,7 +31,12 @@ android/local.properties
 # Optional custom secrets
 lib/config/secrets.dart
 android/app/supabase/
-supabase/
+/supabase/
+!/supabase/
+!/supabase/migrations/
+!/supabase/migrations/**
+!/supabase/functions/
+!/supabase/functions/**
 # Firebase
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
