@@ -42,7 +42,6 @@ class _AddCustomerState extends State<AddCustomer> {
   @override
   void initState() {
     super.initState();
-    // Initialize sync service after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = context.read<AuthProvider>();
       _customerSyncService = CustomerSyncService(
@@ -56,8 +55,6 @@ class _AddCustomerState extends State<AddCustomer> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
-    // Check if editing existing customer
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args != null && args is Map<String, dynamic>) {
       _isEditMode = true;
@@ -68,7 +65,6 @@ class _AddCustomerState extends State<AddCustomer> {
   void _populateCustomerData(Map<String, dynamic> customerData) {
     _nameController.text = customerData['name'] ?? '';
 
-    // Remove +234 prefix for display
     String phone = customerData['phone'] ?? '';
     if (phone.startsWith('+234')) {
       phone = '0${phone.substring(4)}';
@@ -78,7 +74,6 @@ class _AddCustomerState extends State<AddCustomer> {
     _selectedGender = customerData['gender'];
     _notesController.text = customerData['notes'] ?? '';
 
-    // Store existing customer for update
     if (customerData['id'] != null) {
       _existingCustomer = Customer(
         id: customerData['id'],
@@ -145,10 +140,30 @@ class _AddCustomerState extends State<AddCustomer> {
     });
   }
 
+  /// Shows a snackbar warning then navigates to /purchase after a short delay
+  /// so the user reads the message before being redirected.
+  void _warnAndRedirectToPurchase(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    // Navigate after snackbar has had time to show
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        Navigator.of(context).pushNamed('/purchase');
+      }
+    });
+  }
+
   Future<void> _saveCustomer() async {
-    if (!_isFormValid) {
-      return;
-    }
+    if (!_isFormValid) return;
 
     setState(() {
       _isLoading = true;
@@ -158,7 +173,7 @@ class _AddCustomerState extends State<AddCustomer> {
       final String phone = _phoneController.text.trim();
       final authProvider = context.read<AuthProvider>();
 
-      // Check if phone number already exists (for new customers or if phone changed)
+      // Check duplicate phone (for new customers or changed phone)
       if (!_isEditMode || (_existingCustomer?.phone != phone)) {
         final exists = await _customerRepository.customerExists(phone);
         if (exists) {
@@ -177,7 +192,7 @@ class _AddCustomerState extends State<AddCustomer> {
       }
 
       if (_isEditMode && _existingCustomer != null) {
-        // Update existing customer
+        // ── UPDATE ──────────────────────────────────────────────────────────
         final updatedCustomer = _existingCustomer!.copyWith(
           name: _nameController.text.trim(),
           phone: phone,
@@ -188,13 +203,11 @@ class _AddCustomerState extends State<AddCustomer> {
           updatedAt: DateTime.now(),
         );
 
-        // Use CustomerSyncService for automatic cloud sync
         await _customerSyncService.updateCustomer(updatedCustomer);
 
         if (mounted) {
           HapticFeedback.mediumImpact();
-          Navigator.of(context).pop(true); // Return true to indicate success
-
+          Navigator.of(context).pop(true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -206,46 +219,34 @@ class _AddCustomerState extends State<AddCustomer> {
           );
         }
       } else {
+        // ── CREATE ──────────────────────────────────────────────────────────
+
+        // Guard 1: local count vs license max
         final currentCustomerCount =
             await _customerRepository.getCustomerCount();
         if (currentCustomerCount >= authProvider.activeMaxClients) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  authProvider.hasPremiumAccess
-                      ? 'Customer limit reached for your current license.'
-                      : 'Free tier limit reached. Upgrade your license to add more customers.',
-                ),
-                backgroundColor: Theme.of(context).colorScheme.error,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
           setState(() => _isLoading = false);
+          _warnAndRedirectToPurchase(
+            authProvider.hasPremiumAccess
+                ? 'Customer limit reached for your current license. Upgrade to add more.'
+                : 'Free tier limit reached (${authProvider.activeMaxClients} customers). Upgrade to Pro to add unlimited customers.',
+          );
           return;
         }
 
+        // Guard 2: server-side slot check
         final canAddMoreClients = await authProvider.canAddMoreClients();
         if (!canAddMoreClients) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  authProvider.licenseTier == LicenseTier.free
-                      ? 'Free tier limit reached. Upgrade your license to add more customers.'
-                      : 'Customer limit reached for your current license.',
-                ),
-                backgroundColor: Theme.of(context).colorScheme.error,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
           setState(() => _isLoading = false);
+          _warnAndRedirectToPurchase(
+            authProvider.licenseTier == LicenseTier.free
+                ? 'Free tier limit reached. Upgrade to Pro to add unlimited customers.'
+                : 'Customer limit reached for your current license. Upgrade to add more.',
+          );
           return;
         }
 
-        // Create new customer
+        // All checks passed — create the customer
         final newCustomer = Customer(
           name: _nameController.text.trim(),
           phone: phone,
@@ -255,9 +256,10 @@ class _AddCustomerState extends State<AddCustomer> {
               : _notesController.text.trim(),
         );
 
-        // Use CustomerSyncService for automatic cloud sync
         final createdCustomer =
             await _customerSyncService.createCustomer(newCustomer);
+
+        // Record on license server; roll back locally on failure
         try {
           await authProvider.recordClientAddition();
         } catch (e) {
@@ -269,8 +271,7 @@ class _AddCustomerState extends State<AddCustomer> {
 
         if (mounted) {
           HapticFeedback.mediumImpact();
-          Navigator.of(context).pop(true); // Return true to indicate success
-
+          Navigator.of(context).pop(true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -286,9 +287,7 @@ class _AddCustomerState extends State<AddCustomer> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Failed to save customer: ${e.toString()}',
-            ),
+            content: Text('Failed to save customer: ${e.toString()}'),
             backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
           ),
@@ -304,9 +303,7 @@ class _AddCustomerState extends State<AddCustomer> {
   }
 
   Future<bool> _onWillPop() async {
-    if (!_hasUnsavedChanges) {
-      return true;
-    }
+    if (!_hasUnsavedChanges) return true;
 
     final bool? shouldPop = await showDialog<bool>(
       context: context,
@@ -464,7 +461,8 @@ class _AddCustomerState extends State<AddCustomer> {
                   ),
                 ),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
                     boxShadow: [

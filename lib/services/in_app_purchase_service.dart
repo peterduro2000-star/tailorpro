@@ -3,7 +3,7 @@ import '../models/license_model.dart';
 
 class InAppPurchaseService {
   static const Set<String> productIds = <String>{
-    'tailorpro_pro',
+    'poultry_pro', // Must match Play Console product ID exactly
   };
 
   final InAppPurchase _iap = InAppPurchase.instance;
@@ -30,6 +30,12 @@ class InAppPurchaseService {
       lastError = response.error!.message;
     }
 
+    if (response.notFoundIDs.isNotEmpty) {
+      lastError =
+          'Products not found in Play Store: ${response.notFoundIDs.join(', ')}. '
+          'Ensure the app is installed via the internal testing link.';
+    }
+
     products = response.productDetails;
     loading = false;
   }
@@ -39,6 +45,8 @@ class InAppPurchaseService {
       throw Exception('In-app purchases are not available');
     }
 
+    // Play Billing detects the SKU type automatically —
+    // buyNonConsumable works for both subscriptions and one-time products.
     final purchaseParam = PurchaseParam(productDetails: product);
     await _iap.buyNonConsumable(purchaseParam: purchaseParam);
   }
@@ -50,9 +58,10 @@ class InAppPurchaseService {
     await _iap.restorePurchases();
   }
 
+  /// Maps a Play Store product ID to the corresponding [LicenseTier].
   LicenseTier? tierForProductId(String productId) {
     switch (productId) {
-      case 'tailorpro_pro':
+      case 'poultry_pro':
         return LicenseTier.pro;
       default:
         return null;

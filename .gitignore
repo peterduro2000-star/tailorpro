@@ -44,3 +44,5 @@ ios/Runner/GoogleService-Info.plist
 # Account-specific Google ADI ownership verification token.
 assets/adi-registration.properties
 android/app/src/main/assets/adi-registration.properties
+
+tailorpro-498309-ee63afafc9f0.json

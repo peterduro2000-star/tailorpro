@@ -28,12 +28,11 @@ class _AuthScreenState extends State<AuthScreen> {
   int _currentStep = 0;
 
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _licenseController = TextEditingController();
   final List<TextEditingController> _otpControllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
-  bool _obscurePassword = true;
+
   Timer? _otpCountdownTimer;
   int _otpCountdown = 0;
 
@@ -54,7 +53,6 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _pageController.dispose();
     _emailController.dispose();
-    _passwordController.dispose();
     _licenseController.dispose();
     for (final controller in _otpControllers) {
       controller.dispose();
@@ -93,23 +91,17 @@ class _AuthScreenState extends State<AuthScreen> {
         timer.cancel();
         return;
       }
-
       if (_otpCountdown <= 1) {
         timer.cancel();
-        setState(() {
-          _otpCountdown = 0;
-        });
+        setState(() => _otpCountdown = 0);
       } else {
-        setState(() {
-          _otpCountdown--;
-        });
+        setState(() => _otpCountdown--);
       }
     });
   }
 
   Future<void> _resendOtp(AuthProvider authProvider) async {
     if (_emailController.text.isEmpty || _otpCountdown > 0) return;
-
     await authProvider.requestOTP(_emailController.text);
     if (authProvider.otpSent && mounted) {
       _startOtpCountdown();
@@ -120,7 +112,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final value = (email ?? _emailController.text).trim();
     final atIndex = value.indexOf('@');
     if (atIndex <= 0) return value;
-
     final local = value.substring(0, atIndex);
     final domain = value.substring(atIndex);
     final visiblePrefix = local.length <= 2 ? local : local.substring(0, 2);
@@ -167,7 +158,6 @@ class _AuthScreenState extends State<AuthScreen> {
         selection: TextSelection.collapsed(offset: digit.length),
       );
     }
-
     final focusIndex = code.length >= 6 ? 5 : code.length;
     _otpFocusNodes[focusIndex].requestFocus();
     if (code.length >= 6) {
@@ -181,14 +171,12 @@ class _AuthScreenState extends State<AuthScreen> {
         event.logicalKey != LogicalKeyboardKey.backspace) {
       return KeyEventResult.ignored;
     }
-
     if (_otpControllers[index].text.isEmpty && index > 0) {
       _otpFocusNodes[index - 1].requestFocus();
       _otpControllers[index - 1].clear();
       setState(() {});
       return KeyEventResult.handled;
     }
-
     return KeyEventResult.ignored;
   }
 
@@ -209,7 +197,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// Step 1: Email input
+  /// Step 1: Email input (OTP only)
   Widget _buildEmailStep(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) => Scaffold(
@@ -234,12 +222,16 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const Text('Get Started',
-                      style:
-                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Get Started',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
-                  const Text('Enter your email to receive a verification code',
-                      style: TextStyle(fontSize: 14, color: Colors.grey)),
+                  const Text(
+                    'Enter your email to receive a verification code',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 40),
                   TextField(
                     controller: _emailController,
@@ -259,27 +251,6 @@ class _AuthScreenState extends State<AuthScreen> {
                     'New users will be created automatically',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    enabled: !authProvider.isLoading,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      labelText: 'Password (optional)',
-                      hintText: 'Enter password if you have one',
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        onPressed: () {
-                          setState(() => _obscurePassword = !_obscurePassword);
-                        },
-                        icon: Icon(_obscurePassword
-                            ? Icons.visibility
-                            : Icons.visibility_off),
-                      ),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
@@ -289,8 +260,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           : () async {
                               if (_emailController.text.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text('Enter email address')));
+                                  const SnackBar(
+                                      content: Text('Enter email address')),
+                                );
                                 return;
                               }
                               await authProvider
@@ -304,42 +276,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
                           : const Text('Continue'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: authProvider.isLoading
-                          ? null
-                          : () async {
-                              if (_emailController.text.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text('Enter email address')));
-                                return;
-                              }
-                              if (_passwordController.text.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text('Enter password')));
-                                return;
-                              }
-                              final signedIn =
-                                  await authProvider.signInWithPassword(
-                                _emailController.text,
-                                _passwordController.text,
-                              );
-                              if (signedIn && mounted) _nextStep();
-                            },
-                      child: authProvider.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Sign in with Password'),
                     ),
                   ),
                 ],
@@ -478,8 +417,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               ? const SizedBox(
                                   height: 20,
                                   width: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
                                 )
                               : const Text('Verify Code'),
                         ),
@@ -577,8 +516,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               authProvider.migratedRecordsCount > 0
                                   ? 'Migration Complete'
                                   : 'Ready to backup',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600)),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600)),
                           if (authProvider.migratedRecordsCount > 0)
                             Text(
                                 '${authProvider.migratedRecordsCount} records backed up',
@@ -603,7 +542,8 @@ class _AuthScreenState extends State<AuthScreen> {
                             await authProvider.migrateLocalData(localData);
                             if (mounted &&
                                 authProvider.migratedRecordsCount > 0) {
-                              await Future.delayed(const Duration(seconds: 1));
+                              await Future.delayed(
+                                  const Duration(seconds: 1));
                               _nextStep();
                             }
                           }
@@ -629,7 +569,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// Step 4: License - SIMPLIFIED (no double-initialization)
+  /// Step 4: License
   Widget _buildLicenseStep(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
@@ -648,8 +588,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   const Icon(Icons.lock, size: 48, color: Colors.blue),
                   const SizedBox(height: 24),
                   const Text('Choose Your Plan',
-                      style:
-                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   const Text('Select a license tier or continue with Free',
                       style: TextStyle(fontSize: 14, color: Colors.grey)),
@@ -685,12 +625,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    // Only show Free tier for Phase 1
                     _buildTierCard(
-                        context, 'Free', '₦0', 'Up to 5 clients', Colors.grey,
-                        () {
-                      widget.onAuthSuccess(); // Continue with free tier
-                    }),
+                      context,
+                      'Free',
+                      '₦0',
+                      'Up to 5 clients',
+                      Colors.grey,
+                      () => widget.onAuthSuccess(),
+                    ),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -707,13 +649,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    const Text('Pro features coming soon!',
-                        style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey,
-                            fontStyle: FontStyle.italic)),
+                    const Text(
+                      'Pro features coming soon!',
+                      style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic),
+                    ),
                   ] else ...[
-                    // License already verified - show success
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -728,7 +671,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           Text(
                               '${authProvider.licenseTier?.displayName ?? 'License'} Activated',
                               style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           Text(
                               '${authProvider.remainingClients} spots available',
@@ -783,7 +727,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         fontSize: 14)),
                 const SizedBox(height: 4),
                 Text(description,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    style:
+                        const TextStyle(color: Colors.grey, fontSize: 12)),
               ],
             ),
             Icon(Icons.arrow_forward, color: color),
