@@ -28,7 +28,6 @@ class _CustomerListState extends State<CustomerList> {
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _filteredCustomers = [];
   bool _isLoading = false;
-  DateTime _lastSyncTime = DateTime.now();
 
   @override
   void initState() {
@@ -51,7 +50,6 @@ class _CustomerListState extends State<CustomerList> {
       setState(() {
         _customers = customersWithOrders;
         _filteredCustomers = customersWithOrders;
-        _lastSyncTime = DateTime.now();
         _isLoading = false;
       });
     } catch (e) {
@@ -250,7 +248,7 @@ class _CustomerListState extends State<CustomerList> {
                   onChanged: _filterCustomers,
                   onClear: _clearSearch,
                 ),
-                OfflineIndicatorWidget(lastSyncTime: _lastSyncTime),
+                const OfflineIndicatorWidget(),
                 Expanded(
                   child: _filteredCustomers.isEmpty
                       ? _searchController.text.isNotEmpty

@@ -1,13 +1,12 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:provider/provider.dart';
-
-import '../../config/app_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/license_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/in_app_purchase_service.dart';
+import '../../services/payment/payment_service.dart';
+import '../../services/payment/play_billing_payment_service.dart';
+import '../../services/payment/payment_service_factory.dart';
 
 class PurchaseScreen extends StatefulWidget {
   const PurchaseScreen({super.key});
@@ -17,91 +16,109 @@ class PurchaseScreen extends StatefulWidget {
 }
 
 class _PurchaseScreenState extends State<PurchaseScreen> {
-  final InAppPurchaseService _iapService = InAppPurchaseService();
-  StreamSubscription<List<PurchaseDetails>>? _subscription;
+  late final PaymentService _paymentService;
   bool _initializing = true;
   bool _purchaseInProgress = false;
   String? _statusMessage;
+  String? _displayPrice;
 
   @override
   void initState() {
     super.initState();
-    _subscription = _iapService.purchaseUpdates.listen(_listenToPurchaseUpdated,
-        onError: _handlePurchaseError);
-    _initializeStore();
+    _paymentService = PaymentServiceFactory.create();
+    _loadDisplayPrice();
   }
 
-  Future<void> _initializeStore() async {
+  Future<void> _loadDisplayPrice() async {
     try {
-      await _iapService.init();
-    } catch (e) {
-      _statusMessage = 'Failed to initialize purchases: $e';
-    }
-    if (mounted) {
-      setState(() {
-        _initializing = false;
-      });
-    }
-  }
-
-  void _handlePurchaseError(Object error) {
-    if (!mounted) return;
-    setState(() {
-      _statusMessage = 'Purchase error: $error';
-      _purchaseInProgress = false;
-    });
-  }
-
-  Future<void> _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) async {
-    for (final purchaseDetails in purchaseDetailsList) {
-      if (purchaseDetails.status == PurchaseStatus.pending) {
-        if (!mounted) return;
-        setState(() {
-          _statusMessage = 'Purchase pending...';
-          _purchaseInProgress = true;
-        });
-      } else if (purchaseDetails.status == PurchaseStatus.error) {
-        _handlePurchaseError(purchaseDetails.error ?? 'Unknown purchase error');
-      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
-          purchaseDetails.status == PurchaseStatus.restored) {
-        await _deliverPurchase(purchaseDetails);
+      final price = await _paymentService.getDisplayPrice();
+      if (mounted && price != null) {
+        setState(() => _displayPrice = price);
       }
-    }
-  }
-
-  Future<void> _deliverPurchase(PurchaseDetails purchaseDetails) async {
-    final tier = _iapService.tierForProductId(purchaseDetails.productID);
-    if (tier == null) {
+    } catch (_) {
+      // use fallback price
+    } finally {
       if (mounted) {
-        setState(() {
-          _statusMessage = 'Unsupported product purchased: ${purchaseDetails.productID}';
-          _purchaseInProgress = false;
-        });
+        setState(() => _initializing = false);
       }
-      await _iapService.completePurchase(purchaseDetails);
+    }
+  }
+
+  String get _priceLabel => _displayPrice ?? LicenseTier.pro.priceDisplay;
+
+  bool get _isPlayBilling => _paymentService is PlayBillingPaymentService;
+
+  Future<void> _handleUpgrade() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null || user.email == null) {
+      _showError('Please sign in to upgrade.');
       return;
     }
 
+    setState(() {
+      _purchaseInProgress = true;
+      _statusMessage = 'Starting payment...';
+    });
+
     try {
-      final authProvider = context.read<AuthProvider>();
-      final purchaseToken =
-          purchaseDetails.verificationData.serverVerificationData;
-      if (purchaseToken.isEmpty) {
-        throw Exception('Purchase token is missing');
+      final reference = await _paymentService.purchasePro(email: user.email!);
+
+      if (reference == null || !mounted) {
+        setState(() {
+          _statusMessage = 'Could not start payment. Please try again.';
+          _purchaseInProgress = false;
+        });
+        return;
       }
 
-      await authProvider.activateIapPurchase(
-        edgeFunctionUrl: AppConfig.edgeFunctionsUrl,
-        purchaseToken: purchaseToken,
-        productId: purchaseDetails.productID,
-      );
-      await _iapService.completePurchase(purchaseDetails);
+      setState(() {
+        _purchaseInProgress = false;
+        _statusMessage = null;
+      });
+
+      final verified = await _showConfirmationDialog(reference);
+
+      if (!mounted || !verified) return;
+
+      setState(() {
+        _purchaseInProgress = true;
+        _statusMessage = 'Confirming payment...';
+      });
+
+      final authProvider = context.read<AuthProvider>();
+
+      bool confirmed = false;
+      for (int attempt = 0; attempt < 3; attempt++) {
+        await authProvider.refreshLicense();
+        if (!mounted) return;
+        if (authProvider.effectiveTier == LicenseTier.pro) {
+          confirmed = true;
+          break;
+        }
+        if (attempt < 2) {
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
 
       if (!mounted) return;
+
+      if (!confirmed) {
+        setState(() {
+          _statusMessage =
+              'Payment was received, but we couldn\'t confirm your Pro '
+              'license yet. Please close this screen and reopen it in a '
+              'moment — if it still shows Free, contact support with your '
+              'payment reference.';
+          _purchaseInProgress = false;
+        });
+        return;
+      }
+
       setState(() {
-        _statusMessage = '${tier.displayName} unlocked successfully!';
+        _statusMessage = '${LicenseTier.pro.displayName} unlocked successfully!';
         _purchaseInProgress = false;
       });
+
       await Future.delayed(const Duration(milliseconds: 450));
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -109,16 +126,28 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _statusMessage = 'Purchase completed but could not unlock license: $e';
+        _statusMessage = 'Error: $e';
         _purchaseInProgress = false;
       });
     }
   }
 
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
+  Future<bool> _showConfirmationDialog(String reference) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentConfirmationDialog(
+        onVerify: () => _paymentService.verifyPayment(reference),
+        isPlayBilling: _isPlayBilling,
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+    );
   }
 
   @override
@@ -137,118 +166,294 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (!_iapService.available) {
-      return const Center(
-        child: Text(
-          'In-app purchases are not available on this device.\nTry again on a Google Play-enabled device.',
-          style: TextStyle(fontSize: 16),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
+    final isPro = context.watch<AuthProvider>().effectiveLicenseTier == LicenseTier.pro;
 
-    if (_iapService.products.isEmpty) {
-      return Center(
-        child: Text(
-          _iapService.lastError ?? 'No purchase products are configured yet.',
-          style: const TextStyle(fontSize: 16),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Choose a license to unlock pro limits and premium features.',
-          style: TextStyle(fontSize: 16),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: ListView(
-            children: _iapService.products.map(_buildProductCard).toList(),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isPro
+                  ? Colors.green.withValues(alpha: 0.08)
+                  : Colors.grey.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isPro
+                    ? Colors.green.withValues(alpha: 0.3)
+                    : Colors.grey.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isPro ? Icons.workspace_premium : Icons.lock_open_outlined,
+                  color: isPro ? Colors.green : Colors.grey,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isPro
+                        ? 'You are on the Pro plan'
+                        : 'You are currently on the Free plan',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: isPro ? Colors.green : Colors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        if (_statusMessage != null) ...[
-          Text(_statusMessage!, style: const TextStyle(color: Colors.orange)),
+          const SizedBox(height: 16),
+          const Text(
+            'Choose a license to unlock pro limits and premium features.',
+            style: TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 16),
+          _buildPlanCard(
+            title: 'Free',
+            subtitle: 'For getting started',
+            color: Colors.grey,
+            benefits: LicenseTier.free.features,
+            isCurrent: !isPro,
+          ),
           const SizedBox(height: 12),
-        ],
-        ElevatedButton.icon(
-          onPressed: _purchaseInProgress ? null : _restorePurchases,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Restore purchases'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProductCard(ProductDetails product) {
-    final tier = _iapService.tierForProductId(product.id);
-    if (tier == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(tier.displayName,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 8),
-            Text(product.price, style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 8),
-            ...tier.features.map((feature) => Text('• $feature')),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _purchaseInProgress
-                    ? null
-                    : () => _buyProduct(product),
-                child: Text('Buy ${tier.displayName}'),
+          _buildPlanCard(
+            title: 'Pro',
+            subtitle: 'For professional tailors',
+            color: Colors.deepPurple,
+            benefits: LicenseTier.pro.features,
+            isCurrent: isPro,
+          ),
+          const SizedBox(height: 16),
+          if (!isPro) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Secure Payment',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Lifetime Pro license — $_priceLabel.',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _purchaseInProgress ? null : _handleUpgrade,
+                        child: Text(
+                          _purchaseInProgress
+                              ? 'Processing...'
+                              : 'Pay $_priceLabel — Upgrade to Pro',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(_statusMessage!, style: const TextStyle(color: Colors.orange)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanCard({
+    required String title,
+    required String subtitle,
+    required Color color,
+    required List<String> benefits,
+    required bool isCurrent,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: isCurrent ? Border.all(color: color, width: 2) : null,
+      ),
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: isCurrent ? color.withValues(alpha: 0.05) : null,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.workspace_premium, color: color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                        Text(subtitle, style: const TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                  if (isCurrent)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Current',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: color,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...benefits.map((f) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, size: 18, color: color),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(f)),
+                  ],
+                ),
+              )),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _buyProduct(ProductDetails product) async {
-    if (_purchaseInProgress || !_iapService.available) return;
-    setState(() {
-      _purchaseInProgress = true;
-      _statusMessage = 'Starting purchase...';
-    });
-    try {
-      await _iapService.buyProduct(product);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _purchaseInProgress = false;
-        _statusMessage = 'Failed to begin purchase: $e';
-      });
-    }
+  @override
+  void dispose() {
+    (_paymentService as PlayBillingPaymentService?)?.dispose();
+    super.dispose();
+  }
+}
+
+class _PaymentConfirmationDialog extends StatefulWidget {
+  final Future<bool> Function() onVerify;
+  final bool isPlayBilling;
+
+  const _PaymentConfirmationDialog({
+    required this.onVerify,
+    required this.isPlayBilling,
+  });
+
+  @override
+  State<_PaymentConfirmationDialog> createState() => _PaymentConfirmationDialogState();
+}
+
+class _PaymentConfirmationDialogState extends State<_PaymentConfirmationDialog> {
+  static const _pollInterval = Duration(seconds: 5);
+  static const _maxAutoAttempts = 24;
+
+  Timer? _pollTimer;
+  bool _checking = false;
+  int _attempts = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _check());
   }
 
-  Future<void> _restorePurchases() async {
-    if (!_iapService.available) return;
-    setState(() {
-      _purchaseInProgress = true;
-      _statusMessage = 'Restoring purchases...';
-    });
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    if (_checking || !mounted) return;
+    setState(() => _checking = true);
+
+    bool ok = false;
     try {
-      await _iapService.restorePurchases();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _purchaseInProgress = false;
-        _statusMessage = 'Restore failed: $e';
-      });
+      ok = await widget.onVerify();
+    } catch (_) {
+      ok = false;
     }
+    if (!mounted) return;
+
+    if (ok) {
+      _pollTimer?.cancel();
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    _attempts++;
+    if (_attempts >= _maxAutoAttempts) {
+      _pollTimer?.cancel();
+    }
+    setState(() => _checking = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timedOut = _attempts >= _maxAutoAttempts;
+
+    return AlertDialog(
+      title: const Text('Confirming your payment'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            timedOut
+                ? 'We still haven\'t seen your payment come through. '
+                  'If you completed it, tap "Check now" — otherwise '
+                  'you can cancel and try again.'
+                : widget.isPlayBilling
+                    ? 'Complete your purchase in Google Play. '
+                      'This screen will confirm automatically.'
+                    : 'Complete the payment in your browser. '
+                      'This screen will confirm automatically.',
+          ),
+          if (!timedOut) ...[
+            const SizedBox(height: 20),
+            const Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _checking ? null : _check,
+          child: Text(_checking ? 'Checking...' : 'Check now'),
+        ),
+      ],
+    );
   }
 }

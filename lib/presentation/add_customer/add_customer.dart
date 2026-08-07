@@ -9,6 +9,7 @@ import '../../models/license_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../repositories/customer_repository.dart';
 import '../../services/customer_sync_service.dart';
+import '../purchase/purchase_screen.dart';
 import '../../widgets/custom_icon_widget.dart';
 import './widgets/gender_selector_widget.dart';
 import './widgets/notes_input_widget.dart';
@@ -157,7 +158,11 @@ class _AddCustomerState extends State<AddCustomer> {
     // Navigate after snackbar has had time to show
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
-        Navigator.of(context).pushNamed('/purchase');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const PurchaseScreen(),
+          ),
+        );
       }
     });
   }

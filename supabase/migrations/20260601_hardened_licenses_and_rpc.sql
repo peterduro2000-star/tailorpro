@@ -62,6 +62,8 @@ using (auth.uid() = user_id);
 
 -- 3) Idempotent RPC: activate_license_from_iap
 -- DB-only, atomic, idempotent. Does NOT call external services.
+drop function if exists public.activate_license_from_iap(uuid, text, timestamptz, text, text, text, text);
+
 create or replace function public.activate_license_from_iap(
   p_user_id uuid,
   p_tier text,
@@ -162,6 +164,11 @@ begin
   end if;
 end;
 $$;
+
+drop function if exists public.create_free_license();
+drop function if exists public.get_current_license();
+drop function if exists public.increment_license_client_count();
+drop function if exists public.decrement_license_client_count();
 
 create or replace function public.create_free_license()
 returns table (

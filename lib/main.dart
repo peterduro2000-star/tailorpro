@@ -6,6 +6,7 @@ import 'models/license_model.dart';
 import 'presentation/auth/auth_screen.dart';
 import 'presentation/dashboard/dashboard.dart';
 import 'providers/auth_provider.dart';
+import 'providers/sync_status_provider.dart';
 import 'providers/theme_provider.dart';
 import 'routes/app_routes.dart';
 import 'services/supabase_auth_service.dart';
@@ -26,11 +27,17 @@ void main() async {
   final deepLinkHandler = DeepLinkHandler();
   deepLinkHandler.initialize();
 
+  final syncStatusProvider = SyncStatusProvider();
+
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider.value(value: syncStatusProvider),
         ChangeNotifierProvider(
-          create: (_) => AuthProvider(authService: supabaseAuthService),
+          create: (_) => AuthProvider(
+            authService: supabaseAuthService,
+            syncStatus: syncStatusProvider,
+          ),
         ),
         ChangeNotifierProvider(
           create: (_) => ThemeProvider(),

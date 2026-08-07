@@ -56,7 +56,7 @@ android {
     defaultConfig {
         applicationId = "com.tailorpro.app"
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
         manifestPlaceholders += [supabaseAuthHost: supabaseAuthHost]

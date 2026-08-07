@@ -45,7 +45,17 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    _currentStep = widget.initialStep.clamp(0, 3);
+    
+    // Check if AuthProvider already has a pending OTP from a previous session
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.otpSent && authProvider.email != null) {
+      widget.initialStep == 0 ? _currentStep = 1 : _currentStep = widget.initialStep;
+      _emailController.text = authProvider.email!;
+      _startOtpCountdown();
+    } else {
+      _currentStep = widget.initialStep.clamp(0, 3);
+    }
+    
     _pageController = PageController(initialPage: _currentStep);
   }
 
@@ -339,7 +349,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         children: List.generate(
                           _otpControllers.length,
                           (index) => SizedBox(
-                            width: 48,
+                            width: 45,
                             child: Focus(
                               onKeyEvent: (_, event) =>
                                   _handleOtpKey(index, event),
@@ -361,24 +371,27 @@ class _AuthScreenState extends State<AuthScreen> {
                                 decoration: InputDecoration(
                                   counterText: '',
                                   errorText: null,
+                                  fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                                  filled: true,
                                   contentPadding: const EdgeInsets.symmetric(
                                     vertical: 16,
                                   ),
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
-                                      color: colorScheme.outline,
+                                      color: colorScheme.outlineVariant,
+                                      width: 1,
                                     ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
                                       color: colorScheme.primary,
                                       width: 2,
                                     ),
                                   ),
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
                                 onChanged: (value) =>
@@ -401,10 +414,15 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
+                        height: 54,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: colorScheme.primary,
                             foregroundColor: colorScheme.onPrimary,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           onPressed: authProvider.isLoading || !_isOtpComplete
                               ? null

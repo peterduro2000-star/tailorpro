@@ -9,6 +9,7 @@ import '../services/license_manager.dart';
 import '../services/database_helper.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/data_sync_service.dart';
+import '../providers/sync_status_provider.dart';
 import '../models/license_model.dart';
 
 /// Central provider managing authentication state, license state, and
@@ -23,6 +24,11 @@ import '../models/license_model.dart';
 class AuthProvider extends ChangeNotifier {
   // ─── Injected ────────────────────────────────────────────────────────────────
   final SupabaseAuthService authService;
+  final SyncStatusProvider syncStatus;
+
+  // Persistence keys for pending OTP flow
+  static const String _kPendingEmail = 'pending_auth_email';
+  static const String _kPendingTimestamp = 'pending_auth_timestamp';
 
   // ─── User-scoped services (recreated on every login) ─────────────────────────
   LicenseService? _licenseService;
@@ -55,7 +61,10 @@ class AuthProvider extends ChangeNotifier {
 
   // ─── Constructor ──────────────────────────────────────────────────────────────
 
-  AuthProvider({required this.authService}) {
+  AuthProvider({
+    required this.authService,
+    required this.syncStatus,
+  }) {
     _initialize();
   }
 
@@ -116,6 +125,9 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _initialize() async {
     final session = authService.currentSession;
     final user = authService.currentUser;
+
+    // Restore pending OTP state if app was killed during login
+    await _restorePendingAuth();
 
     if (session != null && user != null) {
       _currentSession = session;
@@ -281,6 +293,35 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Checks if there is a recent pending OTP request and restores it.
+  Future<void> _restorePendingAuth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pendingEmail = prefs.getString(_kPendingEmail);
+      final timestampStr = prefs.getString(_kPendingTimestamp);
+
+      if (pendingEmail != null && timestampStr != null) {
+        final timestamp = DateTime.parse(timestampStr);
+        // Only restore if the OTP was requested in the last 15 minutes
+        if (DateTime.now().difference(timestamp).inMinutes < 15) {
+          _email = pendingEmail;
+          _otpSent = true;
+          notifyListeners();
+        } else {
+          await _clearPendingAuth();
+        }
+      }
+    } catch (_) {
+      // Fail silently, just means user has to re-enter email
+    }
+  }
+
+  Future<void> _clearPendingAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kPendingEmail);
+    await prefs.remove(_kPendingTimestamp);
+  }
+
   // ─── OTP flow ─────────────────────────────────────────────────────────────────
 
   Future<void> requestOTP(String email) async {
@@ -299,6 +340,11 @@ class AuthProvider extends ChangeNotifier {
     try {
       await authService.sendOTP(email);
       _otpSent = true;
+      
+      // Persist for process-death recovery
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kPendingEmail, email);
+      await prefs.setString(_kPendingTimestamp, DateTime.now().toIso8601String());
     } catch (e) {
       _otpSent = false;
       final msg = e.toString();
@@ -329,6 +375,7 @@ class AuthProvider extends ChangeNotifier {
         _currentSession = session;
         _currentUser = session.user;
         _otpSent = false;
+        await _clearPendingAuth();
         await _onUserSessionReady(session.user);
         notifyListeners();
         return true;
@@ -436,6 +483,11 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshLicense() async {
+    if (_licenseService == null || _persistenceService == null) return;
+    await _fetchOrCreateLicense();
+  }
+
   // ─── Client count management ──────────────────────────────────────────────────
 
   /// Server-authoritative check — never rely on the local cache for this.
@@ -540,16 +592,28 @@ class AuthProvider extends ChangeNotifier {
     if (_syncing || _dataSyncService == null) return;
 
     _syncing = true;
+    syncStatus.markSyncing();
     notifyListeners();
 
     _dataSyncService!.syncCloudToLocal(userId).then((_) {
       _syncing = false;
+      syncStatus.markSuccess();
       notifyListeners();
     }).catchError((_) {
       // Sync failure is non-fatal — app works offline.
       _syncing = false;
+      syncStatus.markFailed();
       notifyListeners();
     });
+  }
+
+  /// Public entry point to (re)trigger a cloud → local synchronization,
+  /// e.g. from a "Tap to retry" affordance. No-op when not authenticated or
+  /// when a sync is already running.
+  void startCloudSync() {
+    if (_currentUser != null) {
+      _triggerCloudSync(_currentUser!.id);
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────

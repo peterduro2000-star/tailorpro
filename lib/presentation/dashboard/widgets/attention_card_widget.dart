@@ -67,25 +67,33 @@ class AttentionCardWidget extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.warning,
-                  color: theme.colorScheme.error,
-                  size: 24,
-                ),
-                SizedBox(width: 2.w),
-                Text(
-                  'Attention Needed',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning,
+                    color: theme.colorScheme.error,
+                    size: 24,
                   ),
-                ),
-              ],
+                  SizedBox(width: 2.w),
+                  Expanded(
+                    child: Text(
+                      'Attention Needed',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
             TextButton(
               onPressed: onViewAll,
-              child: Text('View All'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.symmetric(horizontal: 2.w),
+              ),
+              child: const Text('View All'),
             ),
           ],
         ),
